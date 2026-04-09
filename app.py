@@ -33,13 +33,28 @@ SYMBOL_MAP = {
 }
 
 def fetch_yahoo_quote(yf_symbol):
-    url = f'https://query1.finance.yahoo.com/v8/finance/chart/{requests.utils.quote(yf_symbol)}?interval=1m&range=1d'
+    # Usiamo range=5d per avere sia chartPreviousClose che regularMarketPreviousClose
+    url = f'https://query1.finance.yahoo.com/v8/finance/chart/{requests.utils.quote(yf_symbol)}?interval=1d&range=5d'
     r = requests.get(url, headers=HEADERS, timeout=10)
     r.raise_for_status()
     data = r.json()
-    meta = data['chart']['result'][0]['meta']
-    price  = meta.get('regularMarketPrice', 0)
-    prev   = meta.get('chartPreviousClose', price)
+    result = data['chart']['result'][0]
+    meta   = result['meta']
+
+    price = meta.get('regularMarketPrice', 0)
+
+    # Calcoliamo prev dalla serie storica: penultimo close = chiusura di ieri
+    closes = result.get('indicators', {}).get('quote', [{}])[0].get('close', [])
+    closes_clean = [c for c in closes if c is not None]
+
+    if len(closes_clean) >= 2:
+        # ultimo = oggi (potrebbe essere intraday), penultimo = chiusura ieri
+        prev = closes_clean[-2]
+    elif len(closes_clean) == 1:
+        prev = closes_clean[0]
+    else:
+        prev = meta.get('chartPreviousClose', price)
+
     change   = round(price - prev, 6)
     change_p = round((change / prev * 100) if prev else 0, 4)
     return {
