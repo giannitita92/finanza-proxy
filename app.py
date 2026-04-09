@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import requests
 import os
+from datetime import timezone, timedelta
 
 app = Flask(__name__)
 CORS(app)
@@ -21,6 +22,9 @@ SYMBOL_MAP = {
     'STOXX50E.INDX': '^STOXX50E',
     'GSPC.INDX':     '^GSPC',
     'NDX.INDX':      '^NDX',
+    # Tassi di interesse - formato Yahoo Finance
+    'EURIBOR1M.INDEX': 'EURIBOR1MD=X',
+    'EURSW30Y.INDEX':  'EURSW30Y=X',
     'BMPS.MI': 'BMPS.MI',
     'ISP.MI':  'ISP.MI',
     'LDO.MI':  'LDO.MI',
@@ -101,12 +105,16 @@ def fetch_yahoo_history(yf_symbol, interval, range_str):
     highs      = result['indicators']['quote'][0].get('high', [])
     lows       = result['indicators']['quote'][0].get('low', [])
 
+    # Converti timestamp UTC → ora di Roma (CET=UTC+1, CEST=UTC+2)
+    # Usiamo offset fisso +1 (invernale); per semplicità aggiungiamo 1h e lasciamo
+    # che il frontend mostri l'ora locale del server (già ok per Milano)
+    # In realtà passiamo il ts originale e formattiamo lato JS con timeZone:'Europe/Rome'
     candles = []
     for i, ts in enumerate(timestamps):
         if i >= len(closes) or closes[i] is None:
             continue
         candles.append({
-            't': ts,
+            't': ts,  # Unix timestamp UTC — il frontend converte con timeZone Europe/Rome
             'o': round(opens[i], 4)  if opens[i]  is not None else None,
             'h': round(highs[i], 4)  if highs[i]  is not None else None,
             'l': round(lows[i], 4)   if lows[i]   is not None else None,
