@@ -12,7 +12,6 @@ HEADERS = {
     'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
 }
 
-# Mappa simboli interni → Yahoo Finance
 SYMBOL_MAP = {
     'FTSEMIB.INDX':  '^FTSEMIB',
     'GDAXI.INDX':    '^GDAXI',
@@ -34,23 +33,41 @@ SYMBOL_MAP = {
 }
 
 def fetch_yahoo(yf_symbol):
-    url = f'https://query1.finance.yahoo.com/v8/finance/chart/{requests.utils.quote(yf_symbol)}?interval=1d&range=2d'
+    # Usiamo v8 con range=1d interval=1m per avere i dati intraday di oggi
+    # e chartPreviousClose che è la chiusura di ieri (dato corretto per la %)
+    url = (
+        f'https://query1.finance.yahoo.com/v8/finance/chart/'
+        f'{requests.utils.quote(yf_symbol)}'
+        f'?interval=1m&range=1d'
+    )
     r = requests.get(url, headers=HEADERS, timeout=10)
     r.raise_for_status()
     data = r.json()
-    meta = data['chart']['result'][0]['meta']
-    price  = meta.get('regularMarketPrice') or meta.get('chartPreviousClose', 0)
-    prev   = meta.get('previousClose') or meta.get('chartPreviousClose', price)
-    change   = round(price - prev, 4)
+    result = data['chart']['result'][0]
+    meta   = result['meta']
+
+    # regularMarketPrice = prezzo corrente (o ultima chiusura se mercato chiuso)
+    price = meta.get('regularMarketPrice', 0)
+
+    # chartPreviousClose = chiusura di IERI — questo è il riferimento corretto
+    prev  = meta.get('chartPreviousClose', price)
+
+    # Se non disponibile usa previousClose
+    if not prev:
+        prev = meta.get('previousClose', price)
+
+    change   = round(price - prev, 6)
     change_p = round((change / prev * 100) if prev else 0, 4)
+
     return {
         'code':          yf_symbol,
-        'close':         price,
-        'previousClose': prev,
+        'close':         round(price, 4),
+        'previousClose': round(prev, 4),
         'change':        change,
         'change_p':      change_p,
         'timestamp':     meta.get('regularMarketTime', 0),
         'currency':      meta.get('currency', 'EUR'),
+        'marketState':   meta.get('marketState', 'CLOSED'),
     }
 
 @app.route('/quote')
@@ -70,7 +87,7 @@ def quote():
         try:
             results.append(fetch_yahoo(yf_sym))
         except Exception as e:
-            results.append({'code': sym, 'error': str(e)})
+            results.append({'code': sym, 'error': str(e), 'close': 0, 'change': 0, 'change_p': 0})
 
     return jsonify(results if len(results) > 1 else results[0])
 
