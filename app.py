@@ -13,7 +13,7 @@ HEADERS = {
 }
 
 SYMBOL_MAP = {
-    'FTSEMIB.INDX':  '^FTSEMIB',
+    'FTSEMIB.INDX':  'FTSEMIB.MI',
     'GDAXI.INDX':    '^GDAXI',
     'FCHI.INDX':     '^FCHI',
     'FTSE.INDX':     '^FTSE',
