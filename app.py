@@ -32,33 +32,16 @@ SYMBOL_MAP = {
     'MB.MI':   'MB.MI',
 }
 
-def fetch_yahoo(yf_symbol):
-    # Usiamo v8 con range=1d interval=1m per avere i dati intraday di oggi
-    # e chartPreviousClose che è la chiusura di ieri (dato corretto per la %)
-    url = (
-        f'https://query1.finance.yahoo.com/v8/finance/chart/'
-        f'{requests.utils.quote(yf_symbol)}'
-        f'?interval=1m&range=1d'
-    )
+def fetch_yahoo_quote(yf_symbol):
+    url = f'https://query1.finance.yahoo.com/v8/finance/chart/{requests.utils.quote(yf_symbol)}?interval=1m&range=1d'
     r = requests.get(url, headers=HEADERS, timeout=10)
     r.raise_for_status()
     data = r.json()
-    result = data['chart']['result'][0]
-    meta   = result['meta']
-
-    # regularMarketPrice = prezzo corrente (o ultima chiusura se mercato chiuso)
-    price = meta.get('regularMarketPrice', 0)
-
-    # chartPreviousClose = chiusura di IERI — questo è il riferimento corretto
-    prev  = meta.get('chartPreviousClose', price)
-
-    # Se non disponibile usa previousClose
-    if not prev:
-        prev = meta.get('previousClose', price)
-
+    meta = data['chart']['result'][0]['meta']
+    price  = meta.get('regularMarketPrice', 0)
+    prev   = meta.get('chartPreviousClose', price)
     change   = round(price - prev, 6)
     change_p = round((change / prev * 100) if prev else 0, 4)
-
     return {
         'code':          yf_symbol,
         'close':         round(price, 4),
@@ -70,26 +53,90 @@ def fetch_yahoo(yf_symbol):
         'marketState':   meta.get('marketState', 'CLOSED'),
     }
 
+def fetch_yahoo_history(yf_symbol, interval, range_str):
+    """
+    interval: 1m, 5m, 15m, 30m, 60m, 1d, 1wk
+    range_str: 1d, 5d, 1mo, 3mo, 6mo, 1y, 5y
+    """
+    # Yahoo Finance interval/range compatibility
+    valid = {
+        '1m':  ['1d', '5d'],
+        '5m':  ['1d', '5d'],
+        '15m': ['1d', '5d'],
+        '30m': ['1d', '5d', '1mo'],
+        '60m': ['1d', '5d', '1mo', '3mo'],
+        '1d':  ['1mo', '3mo', '6mo', '1y', '5y'],
+        '1wk': ['3mo', '6mo', '1y', '5y'],
+    }
+    allowed_ranges = valid.get(interval, ['1mo'])
+    if range_str not in allowed_ranges:
+        range_str = allowed_ranges[-1]
+
+    url = (f'https://query1.finance.yahoo.com/v8/finance/chart/'
+           f'{requests.utils.quote(yf_symbol)}'
+           f'?interval={interval}&range={range_str}')
+    r = requests.get(url, headers=HEADERS, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    result = data['chart']['result'][0]
+    meta   = result['meta']
+    timestamps = result.get('timestamp', [])
+    closes     = result['indicators']['quote'][0].get('close', [])
+    opens      = result['indicators']['quote'][0].get('open', [])
+    highs      = result['indicators']['quote'][0].get('high', [])
+    lows       = result['indicators']['quote'][0].get('low', [])
+
+    candles = []
+    for i, ts in enumerate(timestamps):
+        if i >= len(closes) or closes[i] is None:
+            continue
+        candles.append({
+            't': ts,
+            'o': round(opens[i], 4)  if opens[i]  is not None else None,
+            'h': round(highs[i], 4)  if highs[i]  is not None else None,
+            'l': round(lows[i], 4)   if lows[i]   is not None else None,
+            'c': round(closes[i], 4),
+        })
+
+    return {
+        'symbol':   yf_symbol,
+        'interval': interval,
+        'range':    range_str,
+        'currency': meta.get('currency', 'EUR'),
+        'prev':     meta.get('chartPreviousClose', 0),
+        'candles':  candles,
+    }
+
 @app.route('/quote')
 def quote():
     symbol = request.args.get('symbol', '').strip()
     extra  = request.args.get('s', '').strip()
     if not symbol:
         return jsonify({'error': 'symbol required'}), 400
-
     symbols = [symbol]
     if extra:
         symbols += [s.strip() for s in extra.split(',') if s.strip()]
-
     results = []
     for sym in symbols:
         yf_sym = SYMBOL_MAP.get(sym, sym)
         try:
-            results.append(fetch_yahoo(yf_sym))
+            results.append(fetch_yahoo_quote(yf_sym))
         except Exception as e:
             results.append({'code': sym, 'error': str(e), 'close': 0, 'change': 0, 'change_p': 0})
-
     return jsonify(results if len(results) > 1 else results[0])
+
+@app.route('/history')
+def history():
+    symbol   = request.args.get('symbol', '').strip()
+    interval = request.args.get('interval', '1d').strip()
+    range_s  = request.args.get('range', '1mo').strip()
+    if not symbol:
+        return jsonify({'error': 'symbol required'}), 400
+    yf_sym = SYMBOL_MAP.get(symbol, symbol)
+    try:
+        return jsonify(fetch_yahoo_history(yf_sym, interval, range_s))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health():
