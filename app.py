@@ -161,6 +161,114 @@ def history():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/portfolio_history')
+def portfolio_history():
+    """
+    Calcola il valore storico del portafoglio giorno per giorno.
+    Riceve: positions = lista di {symbol, qty, avgPrice, startDate}
+    Ritorna: serie temporale di {date, value, invested, pl, plPct}
+    """
+    import json
+    from datetime import datetime, timedelta
+
+    try:
+        positions_raw = request.args.get('positions', '')
+        if not positions_raw:
+            return jsonify({'error': 'positions required'}), 400
+        positions = json.loads(positions_raw)
+    except Exception as e:
+        return jsonify({'error': f'invalid positions: {e}'}), 400
+
+    # Scarica storico per ogni titolo dal 2025-08-26 (primo acquisto)
+    all_closes = {}  # symbol -> {date_str -> close}
+
+    for pos in positions:
+        sym = pos['symbol']  # es. BMPS.MI
+        try:
+            hist = fetch_yahoo_history(sym, '1d', '1y')
+            closes = {}
+            for c in hist['candles']:
+                from datetime import timezone
+                dt = datetime.fromtimestamp(c['t'], tz=timezone.utc)
+                date_str = dt.strftime('%Y-%m-%d')
+                closes[date_str] = c['c']
+            all_closes[sym] = closes
+        except Exception as e:
+            all_closes[sym] = {}
+
+    # Costruisci serie giornaliera dal 2025-08-26 ad oggi
+    start = datetime(2025, 8, 26)
+    end   = datetime.now()
+    series = []
+    current = start
+
+    while current <= end:
+        date_str = current.strftime('%Y-%m-%d')
+        # Skip weekend
+        if current.weekday() < 5:
+            total_value    = 0.0
+            total_invested = 0.0
+            has_data       = False
+
+            for pos in positions:
+                sym       = pos['symbol']
+                qty       = pos['qty']
+                avg_price = pos['avgPrice']
+                start_date= pos['startDate']  # 'YYYY-MM-DD'
+
+                # Prima dell'acquisto questo titolo non è in portafoglio
+                if date_str < start_date:
+                    continue
+
+                invested = qty * avg_price
+                closes   = all_closes.get(sym, {})
+
+                # Cerca il prezzo del giorno (o il più recente disponibile)
+                price = closes.get(date_str)
+                if price is None:
+                    # Cerca il giorno lavorativo precedente più vicino
+                    for days_back in range(1, 8):
+                        prev_date = (current - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                        if prev_date in closes:
+                            price = closes[prev_date]
+                            break
+
+                if price is not None:
+                    total_value    += qty * price
+                    total_invested += invested
+                    has_data        = True
+
+            if has_data and total_invested > 0:
+                pl     = total_value - total_invested
+                pl_pct = (pl / total_invested) * 100
+                series.append({
+                    'date':     date_str,
+                    'value':    round(total_value, 2),
+                    'invested': round(total_invested, 2),
+                    'pl':       round(pl, 2),
+                    'plPct':    round(pl_pct, 4),
+                })
+
+        current += timedelta(days=1)
+
+    # Calcola min/max P&L
+    if series:
+        pl_values = [s['pl'] for s in series]
+        pct_values = [s['plPct'] for s in series]
+        stats = {
+            'maxPl':    max(pl_values),
+            'minPl':    min(pl_values),
+            'maxPct':   max(pct_values),
+            'minPct':   min(pct_values),
+            'maxDate':  series[pl_values.index(max(pl_values))]['date'],
+            'minDate':  series[pl_values.index(min(pl_values))]['date'],
+        }
+    else:
+        stats = {}
+
+    return jsonify({'series': series, 'stats': stats})
+
+
 @app.route('/health')
 def health():
     return jsonify({'status': 'ok'})
