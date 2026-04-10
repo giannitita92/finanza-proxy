@@ -34,6 +34,7 @@ SYMBOL_MAP = {
     'PST.MI':  'PST.MI',
     'ENEL.MI': 'ENEL.MI',
     'MB.MI':   'MB.MI',
+    '1EL.MI':  '1EL.MI',
 }
 
 def fetch_yahoo_quote(yf_symbol):
