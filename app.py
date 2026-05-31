@@ -42,6 +42,8 @@ SYMBOL_MAP = {
     'IT10Y.INDEX':  'ITGB10Y=X',
     'DE10Y.INDEX':  'DEGB10Y=X',
     'FTSEMIB.FUT':  'FTSEMIB.MI',
+    'DAX.INDEX':    '^GDAXI',
+    'SP500.INDEX':  '^GSPC',
 }
 
 def fetch_yahoo_quote(yf_symbol):
