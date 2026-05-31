@@ -277,6 +277,40 @@ def portfolio_history():
     return jsonify({'series': series, 'stats': stats})
 
 
+@app.route('/economic_calendar')
+def economic_calendar():
+    """
+    Scarica il calendario economico da Trading Economics (fonte pubblica)
+    Ritorna eventi con impact high/medium per EU, US, IT
+    """
+    from datetime import datetime, timedelta
+    import json
+
+    try:
+        # Trading Economics ha un endpoint pubblico per il calendario
+        url = 'https://tradingeconomics.com/calendars/api?c=guest:guest&f=json&country=euro+area,united+states,italy,germany,france&importance=1,2,3'
+        r = requests.get(url, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+
+        events = []
+        for e in data:
+            events.append({
+                'date':     e.get('Date','')[:10],
+                'time':     e.get('Date','')[11:16],
+                'country':  e.get('Country',''),
+                'event':    e.get('Event',''),
+                'impact':   'high' if e.get('Importance',0) == 3 else 'medium' if e.get('Importance',0) == 2 else 'low',
+                'actual':   e.get('Actual'),
+                'estimate': e.get('Forecast'),
+                'prev':     e.get('Previous'),
+            })
+
+        return jsonify({'economicCalendar': events})
+    except Exception as e:
+        return jsonify({'error': str(e), 'economicCalendar': []}), 200
+
+
 @app.route('/health')
 def health():
     return jsonify({'status': 'ok'})
