@@ -39,8 +39,8 @@ SYMBOL_MAP = {
     'VIX.INDEX':    '^VIX',
     'NIKKEI.INDEX': '^N225',
     'EURUSD.FX':    'EURUSD=X',
-    'IT10Y.INDEX':  'ITGB10YD=X',
-    'DE10Y.INDEX':  'DEGB10YD=X',
+    'IT10Y.INDEX':  'ITGB10Y=X',
+    'DE10Y.INDEX':  'DEGB10Y=X',
     'FTSEMIB.FUT':  'FTSEMIB.MI',
 }
 
@@ -275,6 +275,70 @@ def portfolio_history():
         stats = {}
 
     return jsonify({'series': series, 'stats': stats})
+
+
+@app.route('/bond_yields')
+def bond_yields():
+    """
+    Recupera rendimenti BTP 10Y Italia e Bund 10Y Germania
+    da Trading Economics (fonte pubblica gratuita)
+    """
+    try:
+        url = 'https://tradingeconomics.com/bonds?c=guest:guest&f=json'
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+
+        it10y = None
+        de10y = None
+
+        for item in data:
+            country = (item.get('Country') or '').lower()
+            name    = (item.get('Name') or item.get('Symbol') or '').lower()
+            if ('italy' in country or 'italia' in country) and '10' in name:
+                it10y = {
+                    'code':     'IT10Y',
+                    'close':    item.get('Last') or item.get('Close') or 0,
+                    'change':   item.get('DailyChange') or 0,
+                    'change_p': item.get('DailyPercentualChange') or 0,
+                }
+            if ('germany' in country or 'german' in country or 'deutschland' in country) and '10' in name:
+                de10y = {
+                    'code':     'DE10Y',
+                    'close':    item.get('Last') or item.get('Close') or 0,
+                    'change':   item.get('DailyChange') or 0,
+                    'change_p': item.get('DailyPercentualChange') or 0,
+                }
+
+        # Fallback: prova con simboli alternativi Yahoo Finance
+        if not it10y:
+            for sym in ['ITGB10Y=X', 'IT10Y=X', '^ITGB10']:
+                try:
+                    it_data = fetch_yahoo_quote(sym)
+                    if it_data and it_data.get('close', 0) > 0:
+                        it10y = {'code': 'IT10Y', 'close': it_data['close'],
+                                 'change': it_data['change'], 'change_p': it_data['change_p']}
+                        break
+                except:
+                    continue
+
+        if not de10y:
+            for sym in ['DEGB10Y=X', 'DE10Y=X', '^DEGB10']:
+                try:
+                    de_data = fetch_yahoo_quote(sym)
+                    if de_data and de_data.get('close', 0) > 0:
+                        de10y = {'code': 'DE10Y', 'close': de_data['close'],
+                                 'change': de_data['change'], 'change_p': de_data['change_p']}
+                        break
+                except:
+                    continue
+
+        return jsonify({
+            'IT10Y': it10y or {'code': 'IT10Y', 'close': 0, 'change': 0, 'change_p': 0, 'error': 'not found'},
+            'DE10Y': de10y or {'code': 'DE10Y', 'close': 0, 'change': 0, 'change_p': 0, 'error': 'not found'},
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/economic_calendar')
