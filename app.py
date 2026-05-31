@@ -43,6 +43,17 @@ SYMBOL_MAP = {
     'DE10Y.INDEX':  'DEGB10Y=X',
     'FTSEMIB.FUT':  'FTSEMIB.MI',
     'DAX.INDEX':    '^GDAXI',
+    # Watchlist
+    'RACE.MI':   'RACE.MI',
+    'FBK.MI':    'FBK.MI',
+    'ERG.MI':    'ERG.MI',
+    'ATL.MI':    'ATL.MI',
+    'REC.MI':    'REC.MI',
+    'REY.MI':    'REY.MI',
+    'TRN.MI':    'TRN.MI',
+    'ENI.MI':    'ENI.MI',
+    'BMED.MI':   'BMED.MI',
+    'STLAM.MI':  'STLAM.MI',
     'SP500.INDEX':  '^GSPC',
 }
 
@@ -277,6 +288,25 @@ def portfolio_history():
         stats = {}
 
     return jsonify({'series': series, 'stats': stats})
+
+
+@app.route('/ftsemib_ohlc')
+def ftsemib_ohlc():
+    """Ritorna apertura e chiusura giornaliera FTSE MIB ultimi 60 giorni"""
+    try:
+        data = fetch_yahoo_history('FTSEMIB.MI', '1d', '3mo')
+        result = []
+        for c in data['candles']:
+            if c.get('o') and c.get('c'):
+                result.append({
+                    'date':  __import__('datetime').datetime.utcfromtimestamp(c['t']).strftime('%Y-%m-%d'),
+                    'open':  round(c['o'], 2),
+                    'close': round(c['c'], 2),
+                    'change_pct': round((c['c'] - c['o']) / c['o'] * 100, 3),
+                })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/bond_yields')
