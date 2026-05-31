@@ -35,6 +35,13 @@ SYMBOL_MAP = {
     'ENEL.MI': 'ENEL.MI',
     'MB.MI':   'MB.MI',
     '1EL.MI':  '1EL.MI',
+    # Pre-market indicators
+    'VIX.INDEX':    '^VIX',
+    'NIKKEI.INDEX': '^N225',
+    'EURUSD.FX':    'EURUSD=X',
+    'IT10Y.INDEX':  'ITGB10YD=X',
+    'DE10Y.INDEX':  'DEGB10YD=X',
+    'FTSEMIB.FUT':  'FTSEMIB.MI',
 }
 
 def fetch_yahoo_quote(yf_symbol):
